@@ -1,0 +1,69 @@
+name: Build Legacy (x86-64 baseline)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  # 方案一：静态 musl 版，任何 Linux 都能跑（优先用这个）
+  musl-static:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install musl toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y musl-tools
+          rustup target add x86_64-unknown-linux-musl
+
+      - name: Build
+        env:
+          RUSTFLAGS: -C target-cpu=x86-64
+        run: cargo build --release --target x86_64-unknown-linux-musl
+
+      - name: Package
+        run: |
+          BIN=$(find target/x86_64-unknown-linux-musl/release -maxdepth 1 -type f -executable ! -name '*.so' | head -1)
+          tar czf tomato-legacy-musl-amd64.tar.gz -C target/x86_64-unknown-linux-musl/release "$(basename "$BIN")"
+          sha256sum tomato-legacy-musl-amd64.tar.gz
+
+      - name: Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: legacy-amd64
+          files: tomato-legacy-musl-amd64.tar.gz
+
+  # 方案二：gnu 版兜底（Debian 11/12、Ubuntu 20.04+ 的 glibc 都兼容）
+  gnu-compat:
+    runs-on: ubuntu-latest
+    container:
+      image: debian:bullseye
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install deps
+        run: |
+          apt-get update
+          apt-get install -y curl build-essential pkg-config libssl-dev git ca-certificates
+
+      - name: Install Rust
+        run: curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+
+      - name: Build
+        env:
+          RUSTFLAGS: -C target-cpu=x86-64
+        run: $HOME/.cargo/bin/cargo build --release
+
+      - name: Package
+        run: |
+          BIN=$(find target/release -maxdepth 1 -type f -executable ! -name '*.so' | head -1)
+          tar czf tomato-legacy-gnu-amd64.tar.gz -C target/release "$(basename "$BIN")"
+
+      - name: Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: legacy-amd64
+          files: tomato-legacy-gnu-amd64.tar.gz
