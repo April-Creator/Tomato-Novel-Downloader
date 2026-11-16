@@ -22,6 +22,10 @@ jobs:
         with:
           targets: x86_64-unknown-linux-musl
 
+      # 关键修复 1：切换到不依赖 Official-API 的构建
+      - name: Switch to no-official-api build
+        run: cp Cargo_no_official.toml Cargo.toml
+
       - name: Build
         env:
           RUSTFLAGS: -C target-cpu=x86-64
@@ -55,7 +59,7 @@ jobs:
     container:
       image: debian:bullseye
     steps:
-      - name: Fix apt sources (bullseye 已归档)
+      - name: Fix apt sources
         run: |
           echo "deb [trusted=yes] http://archive.debian.org/debian bullseye main" > /etc/apt/sources.list
           echo "deb [trusted=yes] http://archive.debian.org/debian-security bullseye-security main" >> /etc/apt/sources.list
@@ -67,9 +71,16 @@ jobs:
       - name: Install Rust
         run: curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
 
+      # 关键修复 1：同样切到 no-official-api 构建
+      - name: Switch to no-official-api build
+        shell: bash
+        run: cp Cargo_no_official.toml Cargo.toml
+
+      # 关键修复 2：显式用 bash，绕开 dash 不支持 pipefail 的问题
       - name: Build
         env:
           RUSTFLAGS: -C target-cpu=x86-64
+        shell: bash
         run: |
           set -o pipefail
           $HOME/.cargo/bin/cargo build --release 2>&1 | tee build.log | tail -60
@@ -84,6 +95,7 @@ jobs:
 
       - name: Package
         if: success()
+        shell: bash
         run: |
           BIN=$(find target/release -maxdepth 1 -type f -executable ! -name '*.so' | head -1)
           tar czf tomato-legacy-gnu-amd64.tar.gz -C target/release "$(basename "$BIN")"
